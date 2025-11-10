@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: upbit-postgres
+    environment:
+      POSTGRES_DB: upbit_trading
+      POSTGRES_USER: upbit
+      POSTGRES_PASSWORD: upbit123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/postgres:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U upbit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: upbit-clickhouse
+    environment:
+      CLICKHOUSE_DB: upbit_trading
+      CLICKHOUSE_USER: upbit
+      CLICKHOUSE_PASSWORD: upbit123
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./migrations/clickhouse:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: upbit-server
+    environment:
+      PORT: 8080
+      JWT_SECRET: "your-super-secret-jwt-key-change-in-production"
+      POSTGRES_DSN: "postgres://upbit:upbit123@postgres:5432/upbit_trading?sslmode=disable"
+      CLICKHOUSE_DSN: "tcp://clickhouse:9000?database=upbit_trading&username=upbit&password=upbit123"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  clickhouse_data:
