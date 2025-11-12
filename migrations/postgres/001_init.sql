@@ -119,6 +119,22 @@ CREATE TABLE trailing_stops (
 CREATE INDEX idx_trailing_stops_position_id ON trailing_stops(position_id);
 CREATE INDEX idx_trailing_stops_is_active ON trailing_stops(is_active);
 
+-- Strategies table (OCP-compliant strategy pattern)
+CREATE TABLE strategies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    position_id UUID NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    strategy_type VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'triggered', 'cancelled', 'completed')),
+    config JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    triggered_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX idx_strategies_position_id ON strategies(position_id);
+CREATE INDEX idx_strategies_status ON strategies(status);
+CREATE INDEX idx_strategies_type ON strategies(strategy_type);
+
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -145,4 +161,7 @@ CREATE TRIGGER update_trading_strategies_updated_at BEFORE UPDATE ON trading_str
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_trailing_stops_updated_at BEFORE UPDATE ON trailing_stops
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_strategies_updated_at BEFORE UPDATE ON strategies
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

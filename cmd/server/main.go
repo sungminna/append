@@ -17,6 +17,7 @@ import (
 	"github.com/sungminna/upbit-trading-platform/internal/service/auth"
 	"github.com/sungminna/upbit-trading-platform/internal/service/position"
 	"github.com/sungminna/upbit-trading-platform/internal/service/scheduler"
+	"github.com/sungminna/upbit-trading-platform/internal/service/strategy"
 	"github.com/sungminna/upbit-trading-platform/internal/service/trading"
 	trailing_stop "github.com/sungminna/upbit-trading-platform/internal/service/trailing_stop"
 	"github.com/sungminna/upbit-trading-platform/internal/upbit/quotation"
@@ -69,6 +70,7 @@ func main() {
 	orderRepo := pgrepo.NewOrderRepository(pgPool)
 	executionRepo := pgrepo.NewOrderExecutionRepository(pgPool)
 	trailingStopRepo := pgrepo.NewTrailingStopRepository(pgPool)
+	strategyRepo := pgrepo.NewStrategyRepository(pgPool)
 	candleRepo := chrepo.NewCandleRepository(chConn)
 
 	// Initialize JWT manager
@@ -83,6 +85,18 @@ func main() {
 	tradingEngine := trading.NewEngine(orderRepo, executionRepo, positionRepo, userAPIKeyRepo)
 	trailingStopService := trailing_stop.NewService(trailingStopRepo, positionRepo, quotationClient, tradingEngine)
 
+	// Initialize strategy executors (OCP pattern)
+	executorRegistry := strategy.NewExecutorRegistry()
+	executorRegistry.Register(strategy.NewStopLossExecutor(tradingEngine))
+	executorRegistry.Register(strategy.NewTakeProfitExecutor(tradingEngine))
+	executorRegistry.Register(strategy.NewTrailingStopExecutor(tradingEngine))
+	executorRegistry.Register(strategy.NewOCOExecutor(tradingEngine, strategyRepo))
+	executorRegistry.Register(strategy.NewScaleOutExecutor(tradingEngine))
+	executorRegistry.Register(strategy.NewTimeBasedExitExecutor(tradingEngine))
+
+	// Initialize strategy manager
+	strategyManager := strategy.NewManager(strategyRepo, positionRepo, quotationClient, executorRegistry)
+
 	// Start trading engine
 	log.Println("Starting trading engine...")
 	if err := tradingEngine.Start(ctx); err != nil {
@@ -93,6 +107,12 @@ func main() {
 	log.Println("Starting trailing stop service...")
 	if err := trailingStopService.Start(ctx); err != nil {
 		log.Fatalf("Failed to start trailing stop service: %v", err)
+	}
+
+	// Start strategy manager
+	log.Println("Starting strategy manager...")
+	if err := strategyManager.Start(ctx); err != nil {
+		log.Fatalf("Failed to start strategy manager: %v", err)
 	}
 
 	// Start candle collection scheduler (optional - for demonstration)
@@ -120,6 +140,7 @@ func main() {
 		PositionService:     positionService,
 		TradingEngine:       tradingEngine,
 		TrailingStopService: trailingStopService,
+		StrategyManager:     strategyManager,
 	})
 
 	// Create HTTP server
@@ -153,6 +174,9 @@ func main() {
 
 	log.Println("Stopping trailing stop service...")
 	trailingStopService.Stop()
+
+	log.Println("Stopping strategy manager...")
+	strategyManager.Stop()
 
 	// Graceful shutdown with timeout
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

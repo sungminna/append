@@ -8,6 +8,7 @@ import (
 	"github.com/sungminna/upbit-trading-platform/internal/api/middleware"
 	"github.com/sungminna/upbit-trading-platform/internal/service/auth"
 	"github.com/sungminna/upbit-trading-platform/internal/service/position"
+	"github.com/sungminna/upbit-trading-platform/internal/service/strategy"
 	"github.com/sungminna/upbit-trading-platform/internal/service/trading"
 	trailing_stop "github.com/sungminna/upbit-trading-platform/internal/service/trailing_stop"
 	"github.com/sungminna/upbit-trading-platform/internal/upbit/quotation"
@@ -23,6 +24,7 @@ type Config struct {
 	PositionService     *position.Service
 	TradingEngine       *trading.Engine
 	TrailingStopService *trailing_stop.Service
+	StrategyManager     *strategy.Manager
 }
 
 // Setup sets up the Gin router
@@ -58,6 +60,7 @@ func Setup(cfg *Config) *gin.Engine {
 	positionHandler := handler.NewPositionHandler(cfg.PositionService)
 	orderHandler := handler.NewOrderHandler(cfg.TradingEngine)
 	trailingStopHandler := handler.NewTrailingStopHandler(cfg.TrailingStopService)
+	strategyHandler := handler.NewStrategyHandler(cfg.StrategyManager)
 
 	// Public API endpoints (no authentication required)
 	publicAPI := r.Group("/api/v1")
@@ -97,11 +100,18 @@ func Setup(cfg *Config) *gin.Engine {
 		protectedAPI.GET("/orders/:id", orderHandler.GetOrder)
 		protectedAPI.DELETE("/orders/:id", orderHandler.CancelOrder)
 
-		// Trailing stop endpoints
+		// Trailing stop endpoints (legacy)
 		protectedAPI.POST("/trailing-stops", trailingStopHandler.CreateTrailingStop)
 		protectedAPI.GET("/positions/:position_id/trailing-stop", trailingStopHandler.GetTrailingStop)
 		protectedAPI.PUT("/trailing-stops/:id", trailingStopHandler.UpdateTrailingPercent)
 		protectedAPI.DELETE("/trailing-stops/:id", trailingStopHandler.CancelTrailingStop)
+
+		// Strategy endpoints (OCP-compliant)
+		protectedAPI.POST("/strategies", strategyHandler.CreateStrategy)
+		protectedAPI.GET("/strategies/:id", strategyHandler.GetStrategy)
+		protectedAPI.GET("/positions/:position_id/strategies", strategyHandler.GetPositionStrategies)
+		protectedAPI.PUT("/strategies/:id", strategyHandler.UpdateStrategyConfig)
+		protectedAPI.DELETE("/strategies/:id", strategyHandler.CancelStrategy)
 	}
 
 	return r
